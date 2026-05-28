@@ -1,49 +1,88 @@
 # purple_logger_otel
 
-OpenTelemetry bridge for [purple_logger](https://pub.dev/packages/purple_logger) — routes structured log events to OTLP via [dartastic_opentelemetry](https://pub.dev/packages/dartastic_opentelemetry).
+**Vendor-neutral** OpenTelemetry abstractions for [purple_logger](https://pub.dev/packages/purple_logger).
 
-## Features
+This package provides the **abstract interfaces** and **utility functions** for bridging purple_logger to OpenTelemetry — with **zero dependencies** on any specific OTel SDK.
 
-- **Zero-friction bridge** — Drop-in `OtelLoggerProvider` in the purple_logger pipeline
-- **Full severity mapping** — PurpleLogLevel → OTel SeverityNumber (1–21)
-- **Structured attributes** — Properties, scope, error, and stack trace all become OTel attributes
-- **Trace correlation** — Auto-extracts `traceId`/`spanId` from the current OTel context
-- **OTLP export** — gRPC and HTTP exporters via dartastic_opentelemetry
-- **Batch processing** — Production-ready `BatchLogRecordProcessor` with configurable queue
+For the concrete implementation using `dartastic_opentelemetry`, see [`purple_logger_otel_dartastic`](../purple_logger_otel_dartastic).
 
-## Quick start
+## Why a separate package?
+
+Following the same pattern as Dart's `http` / `cupertino_http` / `http2_client`:
+
+| Package | Purpose | OTel SDK dependency |
+|---------|---------|-------------------|
+| `purple_logger_otel` | Abstract interfaces + severity mapping | **None** |
+| `purple_logger_otel_dartastic` | Concrete bridge using dartastic | `dartastic_opentelemetry` |
+
+This means:
+- **No lock-in** — swap OTel SDKs by creating a new implementation package
+- **Zero-cost abstraction** — the interface layer adds no runtime overhead
+- **Testable** — test against the abstractions, mock the SDK
+
+## What's included
+
+- `OtelLoggerProvider` — abstract provider that bridges to an OTel SDK
+- `OtelLogger` — abstract logger with built-in property merging, error attachment, and severity mapping
+- `OtelSeverityMapping` — mixin with standard PurpleLogLevel → OTel mapping
+- `TraceContext` — value object for traceId/spanId correlation
+- `severityNumber()` / `severityText()` — standalone mapping functions
+
+## Architecture
+
+```
+purple_logger (core, zero deps)
+    └── purple_logger_otel (abstractions, zero OTel deps)
+            └── purple_logger_otel_dartastic (concrete, depends on dartastic)
+```
+
+## Usage
 
 ```dart
 import 'package:purple_logger/purple_logger.dart';
 import 'package:purple_logger_otel/purple_logger_otel.dart';
-import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart';
+// Plus a concrete implementation:
+import 'package:purple_logger_otel_dartastic/purple_logger_otel_dartastic.dart';
 
-void main() async {
-  // 1. Initialize OTel SDK
-  await OTel.initialize(
-    serviceName: 'my-service',
-    endpoint: 'http://localhost:4318',
-  );
+final factory = LoggingBuilder()
+  .addProvider(DartasticOtelLoggerProvider(
+    otelProvider: OTel.loggerProvider(),
+  ))
+  .addConsole()
+  .build();
+```
 
-  // 2. Add OTel processor (batch for production)
-  OTel.loggerProvider().addLogRecordProcessor(
-    BatchLogRecordProcessor(
-      OtlpHttpLogRecordExporter(
-        OtlpHttpLogRecordExporterConfig(endpoint: 'http://collector:4318'),
-      ),
-    ),
-  );
+## Creating a custom bridge
 
-  // 3. Use OtelLoggerProvider in the purple_logger pipeline
-  final factory = LoggingBuilder()
-    .addProvider(OtelLoggerProvider(otelProvider: OTel.loggerProvider()))
-    .addConsole()
-    .build();
+Implement `OtelLoggerProvider` and `OtelLogger`:
 
-  final logger = factory.createLogger('MyApp');
-  logger.info('Hello OTel!', properties: {'userId': 42});
+```dart
+final class MyOtelProvider extends OtelLoggerProvider {
+  @override
+  OtelLogger createOtelLogger(String category) =>
+      MyOtelLogger(category: category);
+}
 
-  factory.dispose();
+final class MyOtelLogger implements OtelLogger, OtelSeverityMapping {
+  @override
+  final String category;
+
+  MyOtelLogger({required this.category});
+
+  @override
+  void emitToOtel({
+    required int severityNumber,
+    required String severityText,
+    required String body,
+    required Map<String, Object> attributes,
+  }) {
+    // Send to your OTel SDK here
+  }
+
+  @override
+  TraceContext extractTraceContext() => TraceContext.empty;
+
+  // ... implement remaining Logger methods
 }
 ```
 
@@ -58,18 +97,6 @@ void main() async {
 | error         | 17                  | ERROR             |
 | fatal         | 21                  | FATAL             |
 | none          | 0                   | (suppressed)      |
-
-## Attribute mapping
-
-Every `LogEvent` is converted to an OTel log record with:
-
-| Source | OTel Attribute Key |
-|--------|-------------------|
-| `properties` | Direct key-value mapping |
-| `LoggingScope` properties | Merged into attributes |
-| `error` | `error.type`, `error.message` |
-| `stackTrace` | `error.stackTrace` |
-| Active span | `traceId`, `spanId` |
 
 ## License
 

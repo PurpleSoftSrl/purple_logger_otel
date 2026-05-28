@@ -1,108 +1,149 @@
 import 'package:test/test.dart';
 import 'package:purple_logger/purple_logger.dart';
 import 'package:purple_logger_otel/purple_logger_otel.dart';
-import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart'
-    hide LoggerProvider;
 
-/// A minimal stub [APILoggerProvider] for unit testing without OTel init.
-class _StubOtelProvider implements APILoggerProvider {
-  final Map<String, APILogger> _loggers = {};
-
+/// A concrete [OtelLogger] for testing the abstract base class.
+final class _TestOtelLogger implements OtelLogger {
   @override
-  APILogger getLogger(String name,
-      {String? version, String? schemaUrl, Attributes? attributes}) {
-    return _loggers.putIfAbsent(name, () => _StubOtelLogger(name));
-  }
-
-  @override
-  bool get enabled => true;
-
-  @override
-  set enabled(bool value) {}
-
-  @override
-  String get serviceName => 'test';
-
-  @override
-  set serviceName(String value) {}
-
-  @override
-  String? get serviceVersion => null;
-
-  @override
-  set serviceVersion(String? value) {}
-
-  @override
-  String get endpoint => 'http://localhost:4318';
-
-  @override
-  set endpoint(String value) {}
-
-  @override
-  bool get isShutdown => false;
-
-  @override
-  set isShutdown(bool value) {}
-
-  @override
-  Future<bool> shutdown() async => true;
-
-  @override
-  Future<bool> forceFlush() async => true;
-}
-
-/// A minimal stub [APILogger] for unit testing.
-final class _StubOtelLogger implements APILogger {
-  @override
-  final String name;
+  final String category;
 
   final List<_EmittedRecord> emitted = [];
 
-  _StubOtelLogger(this.name);
+  _TestOtelLogger({required this.category});
 
   @override
-  bool get enabled => true;
+  bool isEnabled(PurpleLogLevel level) => level != PurpleLogLevel.none;
 
   @override
-  String? get version => null;
+  void log(
+    PurpleLogLevel level,
+    Object? message, {
+    Map<String, Object?>? properties,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    if (!isEnabled(level)) return;
+
+    final allProps = <String, Object?>{};
+    allProps.addAll(LoggingScope.currentProperties);
+    if (properties != null) allProps.addAll(properties);
+    if (error != null) {
+      allProps['error.type'] = error.runtimeType.toString();
+      allProps['error.message'] = error.toString();
+    }
+    if (stackTrace != null) {
+      allProps['error.stackTrace'] = stackTrace.toString();
+    }
+    final traceCtx = extractTraceContext();
+    if (traceCtx.isValid) {
+      allProps['traceId'] = traceCtx.traceId!;
+      allProps['spanId'] = traceCtx.spanId!;
+    }
+    final filteredProps = <String, Object>{};
+    for (final entry in allProps.entries) {
+      final v = entry.value;
+      if (v != null) filteredProps[entry.key] = v;
+    }
+    emitToOtel(
+      severityNumber: severityNumber(level),
+      severityText: severityText(level),
+      body: message?.toString() ?? '',
+      attributes: filteredProps,
+    );
+  }
 
   @override
-  String? get schemaUrl => null;
+  LoggingScope beginScope(Map<String, Object?> properties) =>
+      LoggingScope(properties);
 
   @override
-  Attributes? get attributes => null;
-
-  @override
-  void emit({
-    DateTime? timeStamp,
-    DateTime? observedTimestamp,
-    Context? context,
-    Severity? severityNumber,
-    String? severityText,
-    dynamic body,
-    Attributes? attributes,
-    String? eventName,
+  void emitToOtel({
+    required int severityNumber,
+    required String severityText,
+    required String body,
+    required Map<String, Object> attributes,
   }) {
     emitted.add(_EmittedRecord(
       severityNumber: severityNumber,
       severityText: severityText,
-      body: body?.toString(),
-      attributes: attributes,
+      body: body,
+      attributes: Map.of(attributes),
     ));
   }
+
+  @override
+  TraceContext extractTraceContext() => TraceContext.empty;
+
+  @override
+  int severityNumber(PurpleLogLevel level) {
+    switch (level) {
+      case PurpleLogLevel.trace: return 1;
+      case PurpleLogLevel.debug: return 5;
+      case PurpleLogLevel.info: return 9;
+      case PurpleLogLevel.warning: return 13;
+      case PurpleLogLevel.error: return 17;
+      case PurpleLogLevel.fatal: return 21;
+      case PurpleLogLevel.none: return 0;
+    }
+  }
+
+  @override
+  String severityText(PurpleLogLevel level) {
+    switch (level) {
+      case PurpleLogLevel.trace: return 'TRACE';
+      case PurpleLogLevel.debug: return 'DEBUG';
+      case PurpleLogLevel.info: return 'INFO';
+      case PurpleLogLevel.warning: return 'WARN';
+      case PurpleLogLevel.error: return 'ERROR';
+      case PurpleLogLevel.fatal: return 'FATAL';
+      case PurpleLogLevel.none: return '';
+    }
+  }
+
+  // Convenience methods — delegate to log()
+  @override
+  void trace(Object? message, {Map<String, Object?>? properties}) =>
+      log(PurpleLogLevel.trace, message, properties: properties);
+
+  @override
+  void debug(Object? message, {Map<String, Object?>? properties}) =>
+      log(PurpleLogLevel.debug, message, properties: properties);
+
+  @override
+  void info(Object? message, {Map<String, Object?>? properties}) =>
+      log(PurpleLogLevel.info, message, properties: properties);
+
+  @override
+  void warning(Object? message, {Map<String, Object?>? properties}) =>
+      log(PurpleLogLevel.warning, message, properties: properties);
+
+  @override
+  void error(Object? message, {Object? error, StackTrace? stackTrace, Map<String, Object?>? properties}) =>
+      log(PurpleLogLevel.error, message, properties: properties, error: error, stackTrace: stackTrace);
+
+  @override
+  void fatal(Object? message, {Object? error, StackTrace? stackTrace, Map<String, Object?>? properties}) =>
+      log(PurpleLogLevel.fatal, message, properties: properties, error: error, stackTrace: stackTrace);
+}
+
+/// A concrete [OtelLoggerProvider] for testing.
+final class _TestOtelProvider extends OtelLoggerProvider {
+  @override
+  OtelLogger createOtelLogger(String category) =>
+      _TestOtelLogger(category: category);
 }
 
 final class _EmittedRecord {
-  final Severity? severityNumber;
-  final String? severityText;
-  final String? body;
-  final Attributes? attributes;
+  final int severityNumber;
+  final String severityText;
+  final String body;
+  final Map<String, Object> attributes;
 
   _EmittedRecord({
-    this.severityNumber,
-    this.severityText,
-    this.body,
-    this.attributes,
+    required this.severityNumber,
+    required this.severityText,
+    required this.body,
+    required this.attributes,
   });
 }
 
@@ -139,6 +180,16 @@ void main() {
     });
   });
 
+  group('OtelSeverityMapping', () {
+    test('mixin provides same mapping as standalone functions', () {
+      final logger = _TestOtelLogger(category: 'Test');
+      for (final level in PurpleLogLevel.values) {
+        expect(logger.severityNumber(level), equals(severityNumber(level)));
+        expect(logger.severityText(level), equals(severityText(level)));
+      }
+    });
+  });
+
   group('TraceContext', () {
     test('empty context is not valid', () {
       expect(TraceContext.empty.isValid, isFalse);
@@ -147,10 +198,7 @@ void main() {
     });
 
     test('context with values is valid', () {
-      final ctx = TraceContext(
-        traceId: 'abc123',
-        spanId: 'def456',
-      );
+      final ctx = TraceContext(traceId: 'abc123', spanId: 'def456');
       expect(ctx.isValid, isTrue);
       expect(ctx.traceId, equals('abc123'));
       expect(ctx.spanId, equals('def456'));
@@ -163,53 +211,39 @@ void main() {
   });
 
   group('OtelLoggerProvider', () {
-    late _StubOtelProvider stubProvider;
-
-    setUp(() {
-      stubProvider = _StubOtelProvider();
-    });
-
     test('createLogger returns OtelLogger with correct category', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
+      final provider = _TestOtelProvider();
       final logger = provider.createLogger('TestCategory');
       expect(logger, isA<OtelLogger>());
       expect(logger.category, equals('TestCategory'));
     });
 
     test('createLogger caches loggers by category', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
+      final provider = _TestOtelProvider();
       final logger1 = provider.createLogger('Cache');
       final logger2 = provider.createLogger('Cache');
       expect(identical(logger1, logger2), isTrue);
     });
 
     test('createLogger returns different loggers for different categories', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
+      final provider = _TestOtelProvider();
       final logger1 = provider.createLogger('Cat1');
       final logger2 = provider.createLogger('Cat2');
       expect(identical(logger1, logger2), isFalse);
     });
 
     test('dispose clears cached loggers', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
+      final provider = _TestOtelProvider();
       provider.createLogger('Temp');
       provider.dispose();
-      // After dispose, creating the same category should return a new instance.
       final logger = provider.createLogger('Temp');
       expect(logger, isA<OtelLogger>());
     });
   });
 
   group('OtelLogger', () {
-    late _StubOtelProvider stubProvider;
-
-    setUp(() {
-      stubProvider = _StubOtelProvider();
-    });
-
     test('isEnabled returns true for all levels except none', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
-      final logger = provider.createLogger('Test') as OtelLogger;
+      final logger = _TestOtelLogger(category: 'Test');
       for (final level in PurpleLogLevel.values) {
         if (level == PurpleLogLevel.none) {
           expect(logger.isEnabled(level), isFalse);
@@ -221,76 +255,70 @@ void main() {
     });
 
     test('beginScope returns LoggingScope with given properties', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
-      final logger = provider.createLogger('Test') as OtelLogger;
+      final logger = _TestOtelLogger(category: 'Test');
       final scope = logger.beginScope({'requestId': 'abc'});
       expect(scope, isA<LoggingScope>());
       expect(scope.effectiveProperties, containsPair('requestId', 'abc'));
     });
 
     test('log with none level is no-op', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
-      final logger = provider.createLogger('Test') as OtelLogger;
-      // Should not throw and should not emit to OTel.
+      final logger = _TestOtelLogger(category: 'Test');
       logger.log(PurpleLogLevel.none, 'should be ignored');
-      // The stub logger may not exist yet since none-level is a no-op.
-      // Just verify no exception was thrown.
+      expect(logger.emitted, isEmpty);
     });
 
-    test('log emits to OTel with correct severity', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
-      final logger = provider.createLogger('Test') as OtelLogger;
+    test('log emits with correct severity', () {
+      final logger = _TestOtelLogger(category: 'Test');
       logger.info('hello OTel');
-      final stubLogger =
-          stubProvider._loggers['Test'] as _StubOtelLogger;
-      expect(stubLogger.emitted.length, equals(1));
-      expect(stubLogger.emitted.first.severityNumber, equals(Severity.INFO));
-      expect(stubLogger.emitted.first.severityText, equals('INFO'));
-      expect(stubLogger.emitted.first.body, equals('hello OTel'));
+      expect(logger.emitted.length, equals(1));
+      expect(logger.emitted.first.severityNumber, equals(9));
+      expect(logger.emitted.first.severityText, equals('INFO'));
+      expect(logger.emitted.first.body, equals('hello OTel'));
     });
 
     test('log attaches error properties', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
-      final logger = provider.createLogger('Test') as OtelLogger;
+      final logger = _TestOtelLogger(category: 'Test');
       final error = Exception('test error');
       logger.error('something failed', error: error);
-      final stubLogger =
-          stubProvider._loggers['Test'] as _StubOtelLogger;
-      expect(stubLogger.emitted.length, equals(1));
-      expect(stubLogger.emitted.first.severityNumber, equals(Severity.ERROR));
+      expect(logger.emitted.length, equals(1));
+      expect(logger.emitted.first.severityNumber, equals(17));
+      expect(logger.emitted.first.attributes, contains('error.type'));
+      expect(logger.emitted.first.attributes, contains('error.message'));
     });
 
     test('log merges scope properties', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
-      final logger = provider.createLogger('Test') as OtelLogger;
+      final logger = _TestOtelLogger(category: 'Test');
       final scope = logger.beginScope({'requestId': 'abc-123'});
       scope.run(() {
         logger.info('inside scope');
       });
-      final stubLogger =
-          stubProvider._loggers['Test'] as _StubOtelLogger;
-      expect(stubLogger.emitted.length, equals(1));
-      expect(stubLogger.emitted.first.body, equals('inside scope'));
+      expect(logger.emitted.length, equals(1));
+      expect(logger.emitted.first.body, equals('inside scope'));
+      expect(logger.emitted.first.attributes, containsPair('requestId', 'abc-123'));
     });
 
     test('convenience methods delegate to log', () {
-      final provider = OtelLoggerProvider(otelProvider: stubProvider);
-      final logger = provider.createLogger('Test') as OtelLogger;
+      final logger = _TestOtelLogger(category: 'Test');
       logger.trace('trace msg');
       logger.debug('debug msg');
       logger.info('info msg');
       logger.warning('warn msg');
       logger.error('error msg');
       logger.fatal('fatal msg');
-      final stubLogger =
-          stubProvider._loggers['Test'] as _StubOtelLogger;
-      expect(stubLogger.emitted.length, equals(6));
-      expect(stubLogger.emitted[0].severityNumber, equals(Severity.TRACE));
-      expect(stubLogger.emitted[1].severityNumber, equals(Severity.DEBUG));
-      expect(stubLogger.emitted[2].severityNumber, equals(Severity.INFO));
-      expect(stubLogger.emitted[3].severityNumber, equals(Severity.WARN));
-      expect(stubLogger.emitted[4].severityNumber, equals(Severity.ERROR));
-      expect(stubLogger.emitted[5].severityNumber, equals(Severity.FATAL));
+      expect(logger.emitted.length, equals(6));
+      expect(logger.emitted[0].severityNumber, equals(1));  // trace
+      expect(logger.emitted[1].severityNumber, equals(5));  // debug
+      expect(logger.emitted[2].severityNumber, equals(9));  // info
+      expect(logger.emitted[3].severityNumber, equals(13)); // warning
+      expect(logger.emitted[4].severityNumber, equals(17)); // error
+      expect(logger.emitted[5].severityNumber, equals(21)); // fatal
+    });
+
+    test('log filters null values from attributes', () {
+      final logger = _TestOtelLogger(category: 'Test');
+      logger.info('test', properties: {'key1': 'value1', 'key2': null});
+      expect(logger.emitted.first.attributes, containsPair('key1', 'value1'));
+      expect(logger.emitted.first.attributes, isNot(contains('key2')));
     });
   });
 }

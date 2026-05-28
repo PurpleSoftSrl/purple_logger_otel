@@ -1,15 +1,19 @@
-/// Extracts trace context from the current OTel [Context].
+/// Trace context abstraction for OpenTelemetry log-trace correlation.
 ///
-/// When a span is active (e.g. inside an OTel tracing scope), this extractor
-/// reads the `traceId` and `spanId` so they can be attached to log records.
-///
-/// This enables correlation between logs and traces in backends like
-/// Jaeger, Tempo, or Azure Monitor.
+/// [TraceContext] is a vendor-neutral value object that carries traceId
+/// and spanId. Concrete bridge packages (e.g. `purple_logger_otel_dartastic`)
+/// provide the [extractTraceContext] implementation that reads from the
+/// actual OTel SDK context.
 library;
 
-import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart';
+import 'package:purple_logger/purple_logger.dart';
 
-/// Trace context extracted from the current OTel [Context].
+/// Trace context extracted from the current OTel context.
+///
+/// When a span is active (e.g. inside an OTel tracing scope), this carries
+/// the `traceId` and `spanId` so they can be attached to log records.
+/// This enables correlation between logs and traces in backends like
+/// Jaeger, Tempo, or Azure Monitor.
 final class TraceContext {
   /// The trace identifier, or `null` if no span is active.
   final String? traceId;
@@ -26,22 +30,60 @@ final class TraceContext {
   static const empty = TraceContext();
 }
 
-/// Extracts trace context from the current OTel [Context].
+/// Mixin that provides the standard OTel severity mapping for [PurpleLogLevel].
 ///
-/// Returns [TraceContext.empty] if no span is active, the span context
-/// is invalid, or OTel has not been initialized.
-TraceContext extractTraceContext() {
-  try {
-    final ctx = Context.current;
-    final spanCtx = ctx.spanContext;
-    if (spanCtx != null && spanCtx.isValid) {
-      return TraceContext(
-        traceId: spanCtx.traceId.toString(),
-        spanId: spanCtx.spanId.toString(),
-      );
+/// Apply this mixin to any [OtelLogger] subclass to get the canonical
+/// `severityNumber()` and `severityText()` methods for free.
+mixin OtelSeverityMapping {
+  /// Maps a [PurpleLogLevel] to its OTel severity number.
+  ///
+  /// | PurpleLogLevel | OTel SeverityNumber |
+  /// |----------------|--------------------:|
+  /// | trace          | 1 (TRACE)           |
+  /// | debug          | 5 (DEBUG)           |
+  /// | info           | 9 (INFO)            |
+  /// | warning        | 13 (WARN)           |
+  /// | error          | 17 (ERROR)          |
+  /// | fatal          | 21 (FATAL)          |
+  /// | none           | 0 (UNSPECIFIED)     |
+  int severityNumber(PurpleLogLevel level) {
+    switch (level) {
+      case PurpleLogLevel.trace:
+        return 1;
+      case PurpleLogLevel.debug:
+        return 5;
+      case PurpleLogLevel.info:
+        return 9;
+      case PurpleLogLevel.warning:
+        return 13;
+      case PurpleLogLevel.error:
+        return 17;
+      case PurpleLogLevel.fatal:
+        return 21;
+      case PurpleLogLevel.none:
+        return 0;
     }
-  } catch (_) {
-    // OTel not initialized — return empty context.
   }
-  return TraceContext.empty;
+
+  /// Returns the OTel severity text for a [PurpleLogLevel].
+  ///
+  /// OTel recommends short uppercase labels matching the severity band.
+  String severityText(PurpleLogLevel level) {
+    switch (level) {
+      case PurpleLogLevel.trace:
+        return 'TRACE';
+      case PurpleLogLevel.debug:
+        return 'DEBUG';
+      case PurpleLogLevel.info:
+        return 'INFO';
+      case PurpleLogLevel.warning:
+        return 'WARN';
+      case PurpleLogLevel.error:
+        return 'ERROR';
+      case PurpleLogLevel.fatal:
+        return 'FATAL';
+      case PurpleLogLevel.none:
+        return '';
+    }
+  }
 }

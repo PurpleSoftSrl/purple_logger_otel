@@ -19,3 +19,5 @@ topics:
   - otlp
   - observability
   - telemetry
+
+publish_to: none

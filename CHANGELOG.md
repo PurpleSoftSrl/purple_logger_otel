@@ -1,8 +1,12 @@
+## 1.0.2
+
+
 ## 1.0.0
 
-- Initial release.
-- `OtelLoggerProvider` — drop-in provider for the purple_logger pipeline.
-- `OtelLogger` — bridges `LogEvent` to OTel `emit()`.
-- `severityNumber()` / `severityText()` — PurpleLogLevel → OTel mapping.
-- `extractTraceContext()` — auto-extracts traceId/spanId from current OTel context.
-- Resilient to OTel not being initialized (graceful fallback).
+- **Breaking**: Refactored to vendor-neutral abstractions (zero OTel SDK dependencies).
+- `OtelLoggerProvider` — abstract provider (was concrete `dartastic`-dependent class).
+- `OtelLogger` — abstract logger with built-in property merging, error attachment, and severity mapping.
+- `OtelSeverityMapping` — mixin with standard PurpleLogLevel → OTel mapping.
+- `TraceContext` — value object for traceId/spanId correlation.
+- `severityNumber()` / `severityText()` — standalone mapping functions.
+- Concrete dartastic implementation moved to `purple_logger_otel_dartastic`.

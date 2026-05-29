@@ -1,73 +1,46 @@
-/// OpenTelemetry bridge provider for purple_logger.
+/// OpenTelemetry bridge abstractions for purple_logger.
 ///
-/// [OtelLoggerProvider] is a [LoggerProvider] that routes [LogEvent]s
-/// from purple_logger to OpenTelemetry via [dartastic_opentelemetry].
+/// This file defines the **abstract** interfaces that any OTel SDK bridge
+/// must implement. Concrete implementations live in companion packages
+/// (e.g. `purple_logger_otel_dartastic`).
 ///
-/// Each [LogEvent] is converted to an OTel log record with:
-/// - Severity number and text mapped from [PurpleLogLevel]
-/// - Structured properties as OTel attributes
-/// - Scope properties merged into attributes
-/// - Trace context (traceId, spanId) auto-extracted from the current OTel context
-/// - Error and stack trace attached as attributes
-///
-/// ```dart
-/// import 'package:purple_logger/purple_logger.dart';
-/// import 'package:purple_logger_otel/purple_logger_otel.dart';
-///
-/// void main() async {
-///   await OTel.initialize(
-///     serviceName: 'my-service',
-///     endpoint: 'http://localhost:4318',
-///   );
-///
-///   final factory = LoggingBuilder()
-///     .addProvider(OtelLoggerProvider())
-///     .addConsole()
-///     .build();
-///
-///   final logger = factory.createLogger('MyApp');
-///   logger.info('Hello OTel!');
-///
-///   factory.dispose();
-/// }
-/// ```
+/// The architecture follows the same pattern as Dart's `http` package:
+/// - `purple_logger_otel` — interfaces + mapping utilities (zero SDK deps)
+/// - `purple_logger_otel_dartastic` — concrete bridge using dartastic_opentelemetry
 library;
 
-import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart'
-    hide LoggerProvider;
 import 'package:purple_logger/purple_logger.dart';
 
 import 'context_extractor.dart';
 import 'level_mapping.dart';
 
-/// A [LoggerProvider] that routes [LogEvent]s to OpenTelemetry.
+/// Abstract [LoggerProvider] that bridges purple_logger events to an OTel SDK.
 ///
-/// Use this as a drop-in provider in the [LoggingBuilder] pipeline.
-/// It creates one OTel logger per purple_logger category and bridges
-/// every [LogEvent] to the OTel logs signal.
-final class OtelLoggerProvider extends LoggerProvider {
+/// Subclasses must implement [createOtelLogger] to produce an SDK-specific
+/// logger instance for a given category.
+///
+/// Usage:
+/// ```dart
+/// // With dartastic_opentelemetry:
+/// final provider = DartasticOtelLoggerProvider(otelProvider: OTel.loggerProvider());
+/// final factory = LoggingBuilder().addProvider(provider).build();
+/// ```
+abstract class OtelLoggerProvider extends LoggerProvider {
   final Map<String, OtelLogger> _loggers = {};
-
-  /// The OTel LoggerProvider used to create OTel loggers.
-  final APILoggerProvider _otelProvider;
-
-  /// Creates an [OtelLoggerProvider].
-  ///
-  /// [otelProvider] — an OTel `LoggerProvider` instance (e.g. from
-  /// `OTel.loggerProvider()` after calling `OTel.initialize()`).
-  OtelLoggerProvider({required APILoggerProvider otelProvider})
-      : _otelProvider = otelProvider;
 
   @override
   Logger createLogger(String category) {
     return _loggers.putIfAbsent(
       category,
-      () => OtelLogger(
-        category: category,
-        otelProvider: _otelProvider,
-      ),
+      () => createOtelLogger(category),
     );
   }
+
+  /// Creates an [OtelLogger] for the given [category].
+  ///
+  /// Subclasses must return a concrete logger that bridges to the
+  /// underlying OTel SDK.
+  OtelLogger createOtelLogger(String category);
 
   @override
   void dispose() {
@@ -75,23 +48,21 @@ final class OtelLoggerProvider extends LoggerProvider {
   }
 }
 
-/// A [Logger] that bridges [LogEvent]s to an OTel logger.
+/// Abstract [Logger] that bridges purple_logger events to an OTel SDK.
 ///
-/// Created internally by [OtelLoggerProvider]. You should not need to
-/// instantiate this directly.
-final class OtelLogger with LoggerConvenience implements Logger {
+/// Subclasses must implement [emitToOtel] and [extractTraceContext] to
+/// send the assembled log record to the underlying OTel SDK.
+///
+/// This class handles:
+/// - Merging scope properties + caller properties
+/// - Attaching error info (`error.type`, `error.message`, `error.stackTrace`)
+/// - Extracting trace context (traceId, spanId) via [extractTraceContext]
+/// - Mapping severity levels via [severityNumber] / [severityText]
+abstract class OtelLogger implements Logger, OtelSeverityMapping {
   @override
   final String category;
 
-  final APILoggerProvider _otelProvider;
-  APILogger? _otelLogger;
-
-  OtelLogger({required this.category, required APILoggerProvider otelProvider})
-      : _otelProvider = otelProvider;
-
-  APILogger _getOtelLogger() {
-    return _otelLogger ??= _otelProvider.getLogger(category);
-  }
+  OtelLogger({required this.category});
 
   @override
   bool isEnabled(PurpleLogLevel level) => level != PurpleLogLevel.none;
@@ -105,8 +76,6 @@ final class OtelLogger with LoggerConvenience implements Logger {
     StackTrace? stackTrace,
   }) {
     if (!isEnabled(level)) return;
-
-    final otelLogger = _getOtelLogger();
 
     // Merge scope properties + caller properties.
     final allProps = <String, Object?>{};
@@ -129,22 +98,20 @@ final class OtelLogger with LoggerConvenience implements Logger {
       allProps['spanId'] = traceCtx.spanId!;
     }
 
-    // Build OTel attributes (filter null values).
-    final filtered = <String, Object>{};
+    // Filter null values (OTel attributes cannot be null).
+    final filteredProps = <String, Object>{};
     for (final entry in allProps.entries) {
-      final value = entry.value;
-      if (value != null) {
-        filtered[entry.key] = value;
+      final v = entry.value;
+      if (v != null) {
+        filteredProps[entry.key] = v;
       }
     }
-    final attrs = OTel.attributesFromMap(filtered);
 
-    // Emit to OTel.
-    otelLogger.emit(
-      severityNumber: _mapSeverity(level),
+    emitToOtel(
+      severityNumber: severityNumber(level),
       severityText: severityText(level),
       body: message?.toString() ?? '',
-      attributes: attrs,
+      attributes: filteredProps,
     );
   }
 
@@ -152,23 +119,21 @@ final class OtelLogger with LoggerConvenience implements Logger {
   LoggingScope beginScope(Map<String, Object?> properties) =>
       LoggingScope(properties);
 
-  /// Maps [PurpleLogLevel] to dartastic's [Severity] enum.
-  Severity _mapSeverity(PurpleLogLevel level) {
-    switch (level) {
-      case PurpleLogLevel.trace:
-        return Severity.TRACE;
-      case PurpleLogLevel.debug:
-        return Severity.DEBUG;
-      case PurpleLogLevel.info:
-        return Severity.INFO;
-      case PurpleLogLevel.warning:
-        return Severity.WARN;
-      case PurpleLogLevel.error:
-        return Severity.ERROR;
-      case PurpleLogLevel.fatal:
-        return Severity.FATAL;
-      case PurpleLogLevel.none:
-        return Severity.UNSPECIFIED;
-    }
-  }
+  /// Emits a log record to the underlying OTel SDK.
+  ///
+  /// [severityNumber] — OTel severity number (1–24, or 0 for UNSPECIFIED).
+  /// [severityText] — Short uppercase label (e.g. 'INFO', 'ERROR').
+  /// [body] — The log message.
+  /// [attributes] — Pre-filtered key-value pairs (no null values).
+  void emitToOtel({
+    required int severityNumber,
+    required String severityText,
+    required String body,
+    required Map<String, Object> attributes,
+  });
+
+  /// Extracts trace context (traceId, spanId) from the current OTel context.
+  ///
+  /// Returns [TraceContext.empty] if no span is active or OTel is not initialized.
+  TraceContext extractTraceContext();
 }

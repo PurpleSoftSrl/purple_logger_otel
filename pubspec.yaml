@@ -1,22 +1,17 @@
 name: purple_logger_otel
-description: OpenTelemetry bridge for purple_logger — routes structured log events to OTLP via dartastic_opentelemetry.
-version: 1.0.0
-homepage: https://github.com/purplesoft-ai/purple_logger
+description: OpenTelemetry bridge abstractions for purple_logger — define once, implement for any OTel backend.
+version: 1.0.2
+repository: https://github.com/purplesoftsrl/purple_logger_otel
+homepage: https://github.com/purplesoftsrl/purple_logger_otel
+topics: [logging, opentelemetry, observability, telemetry]
+license: AGPL-3.0
 
 environment:
-  sdk: '>=3.2.0 <4.0.0'
+  sdk: '>=3.1.0 <4.0.0'
 
 dependencies:
-  purple_logger:
-    path: ../purple_logger
-  dartastic_opentelemetry: ^1.1.0-beta.6
+  purple_logger: ^2.1.0
 
 dev_dependencies:
   test: ^1.25.0
-
-topics:
-  - logging
-  - opentelemetry
-  - otlp
-  - observability
-  - telemetry
+  lints: ^6.0.0

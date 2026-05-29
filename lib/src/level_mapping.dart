@@ -1,14 +1,14 @@
-/// Maps [PurpleLogLevel] to OpenTelemetry [Severity] numbers.
+/// Maps [PurpleLogLevel] to OpenTelemetry severity numbers and text.
 ///
 /// Follows the OTel Logs specification severity mapping:
 /// https://opentelemetry.io/docs/specs/otel/logs/data-model/#mapping-severitynumber
+///
+/// These standalone functions are convenient for one-off use. For classes
+/// that need both mappings, use the [OtelSeverityMapping] mixin from
+/// `context_extractor.dart`.
 library;
 
 import 'package:purple_logger/purple_logger.dart';
-
-// dartastic_opentelemetry re-exports Severity from its API package.
-// We import it conditionally to avoid hard-coding the internal path.
-// The actual import is in otel_logger_provider.dart where the dependency is used.
 
 /// Maps a [PurpleLogLevel] to its OTel severity number.
 ///

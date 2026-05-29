@@ -1,21 +1,17 @@
 name: purple_logger_otel
-description: OpenTelemetry abstractions for purple_logger — vendor-neutral interfaces, severity mapping, and trace context. Use purple_logger_otel_dartastic for the dartastic_opentelemetry implementation.
+description: OpenTelemetry bridge abstractions for purple_logger — define once, implement for any OTel backend.
 version: 1.0.1
-homepage: https://github.com/purplesoft-ai/purple_logger
+repository: https://github.com/purplesoftsrl/purple_logger_otel
+homepage: https://github.com/purplesoftsrl/purple_logger_otel
+topics: [logging, opentelemetry, observability, telemetry]
+license: AGPL-3.0
 
 environment:
-  sdk: '>=3.2.0 <4.0.0'
+  sdk: '>=3.1.0 <4.0.0'
 
 dependencies:
   purple_logger: ^2.1.0
 
 dev_dependencies:
   test: ^1.25.0
-
-topics:
-  - logging
-  - opentelemetry
-  - otlp
-  - observability
-  - telemetry
-
+  lints: ^6.0.0

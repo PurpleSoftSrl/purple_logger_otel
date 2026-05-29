@@ -1,6 +1,6 @@
 name: purple_logger_otel
 description: OpenTelemetry bridge abstractions for purple_logger — define once, implement for any OTel backend.
-version: 1.0.1
+version: 1.0.2
 repository: https://github.com/purplesoftsrl/purple_logger_otel
 homepage: https://github.com/purplesoftsrl/purple_logger_otel
 topics: [logging, opentelemetry, observability, telemetry]

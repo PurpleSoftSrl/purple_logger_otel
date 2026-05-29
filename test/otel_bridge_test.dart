@@ -77,26 +77,40 @@ final class _TestOtelLogger implements OtelLogger {
   @override
   int severityNumber(PurpleLogLevel level) {
     switch (level) {
-      case PurpleLogLevel.trace: return 1;
-      case PurpleLogLevel.debug: return 5;
-      case PurpleLogLevel.info: return 9;
-      case PurpleLogLevel.warning: return 13;
-      case PurpleLogLevel.error: return 17;
-      case PurpleLogLevel.fatal: return 21;
-      case PurpleLogLevel.none: return 0;
+      case PurpleLogLevel.trace:
+        return 1;
+      case PurpleLogLevel.debug:
+        return 5;
+      case PurpleLogLevel.info:
+        return 9;
+      case PurpleLogLevel.warning:
+        return 13;
+      case PurpleLogLevel.error:
+        return 17;
+      case PurpleLogLevel.fatal:
+        return 21;
+      case PurpleLogLevel.none:
+        return 0;
     }
   }
 
   @override
   String severityText(PurpleLogLevel level) {
     switch (level) {
-      case PurpleLogLevel.trace: return 'TRACE';
-      case PurpleLogLevel.debug: return 'DEBUG';
-      case PurpleLogLevel.info: return 'INFO';
-      case PurpleLogLevel.warning: return 'WARN';
-      case PurpleLogLevel.error: return 'ERROR';
-      case PurpleLogLevel.fatal: return 'FATAL';
-      case PurpleLogLevel.none: return '';
+      case PurpleLogLevel.trace:
+        return 'TRACE';
+      case PurpleLogLevel.debug:
+        return 'DEBUG';
+      case PurpleLogLevel.info:
+        return 'INFO';
+      case PurpleLogLevel.warning:
+        return 'WARN';
+      case PurpleLogLevel.error:
+        return 'ERROR';
+      case PurpleLogLevel.fatal:
+        return 'FATAL';
+      case PurpleLogLevel.none:
+        return '';
     }
   }
 
@@ -118,12 +132,20 @@ final class _TestOtelLogger implements OtelLogger {
       log(PurpleLogLevel.warning, message, properties: properties);
 
   @override
-  void error(Object? message, {Object? error, StackTrace? stackTrace, Map<String, Object?>? properties}) =>
-      log(PurpleLogLevel.error, message, properties: properties, error: error, stackTrace: stackTrace);
+  void error(Object? message,
+          {Object? error,
+          StackTrace? stackTrace,
+          Map<String, Object?>? properties}) =>
+      log(PurpleLogLevel.error, message,
+          properties: properties, error: error, stackTrace: stackTrace);
 
   @override
-  void fatal(Object? message, {Object? error, StackTrace? stackTrace, Map<String, Object?>? properties}) =>
-      log(PurpleLogLevel.fatal, message, properties: properties, error: error, stackTrace: stackTrace);
+  void fatal(Object? message,
+          {Object? error,
+          StackTrace? stackTrace,
+          Map<String, Object?>? properties}) =>
+      log(PurpleLogLevel.fatal, message,
+          properties: properties, error: error, stackTrace: stackTrace);
 }
 
 /// A concrete [OtelLoggerProvider] for testing.
@@ -294,7 +316,8 @@ void main() {
       });
       expect(logger.emitted.length, equals(1));
       expect(logger.emitted.first.body, equals('inside scope'));
-      expect(logger.emitted.first.attributes, containsPair('requestId', 'abc-123'));
+      expect(logger.emitted.first.attributes,
+          containsPair('requestId', 'abc-123'));
     });
 
     test('convenience methods delegate to log', () {
@@ -306,9 +329,9 @@ void main() {
       logger.error('error msg');
       logger.fatal('fatal msg');
       expect(logger.emitted.length, equals(6));
-      expect(logger.emitted[0].severityNumber, equals(1));  // trace
-      expect(logger.emitted[1].severityNumber, equals(5));  // debug
-      expect(logger.emitted[2].severityNumber, equals(9));  // info
+      expect(logger.emitted[0].severityNumber, equals(1)); // trace
+      expect(logger.emitted[1].severityNumber, equals(5)); // debug
+      expect(logger.emitted[2].severityNumber, equals(9)); // info
       expect(logger.emitted[3].severityNumber, equals(13)); // warning
       expect(logger.emitted[4].severityNumber, equals(17)); // error
       expect(logger.emitted[5].severityNumber, equals(21)); // fatal
